@@ -1,4 +1,6 @@
-# install
+# Scripts for automic atomic swaps in console
+
+## install
 - install npm
 - install python
 
@@ -10,7 +12,7 @@ pip install grpcio-tools
 make
 ```
 
-# Run acceptor
+## Run acceptor
 
 values are currently hard coded, use these values. 
 
@@ -18,7 +20,7 @@ values are currently hard coded, use these values.
 python acceptor.py -m 1234 -o 987 -d
 ```
 
-# Run initiator
+## Run initiator
 
 values are currently hard coded, use these values. 
 
@@ -26,9 +28,9 @@ values are currently hard coded, use these values.
 python initiator.py -m 987 -o 1234 -d
 ```
 
-# Output
+## Output
 
-## Initiator - Bob
+#### Initiator - Bob
 
 ```sh
 {"step" : 1, "stepName" : "initiateExchange" , data: { "initiatorAmount" : "8", acceptorAmount: 10 }}
@@ -88,7 +90,7 @@ python initiator.py -m 987 -o 1234 -d
 { "step" : 8, "stepName" : "redeemInitiatorFinished"}
 ```
 
-## Acceptor - Alice
+#### Acceptor - Alice
 
 ```sh
 { "step" : 1, "stepName" : "initiateReceived , data: { "initiatorAmount" : "8", acceptorAmount: 10 }}
