@@ -35,14 +35,22 @@ def print_json(step, stepName, data):
     sys.stdout.write(json_data)
     sys.stdout.flush()
 
+def eprint(*args, **kwargs):
+    print(*args, file=sys.stderr, **kwargs)
+
 class AtomicSwap():
 
-    def __init__(self, init_amount, part_amount, host,dry_run):
+    def verboseLog(self, m):
+        if self.verbose:
+            eprint(m)
+
+    def __init__(self, init_amount, part_amount, host, dry_run, verbose):
         
         self.init_amount = init_amount
         self.part_amount = part_amount
         self.dry_run = dry_run
         self.host = host
+        self.verbose = verbose
 
     def execute(self, process):
  
@@ -66,74 +74,63 @@ class AtomicSwap():
         # addr = address
         #####################
 
-        # Step 1 - Initiating Exchange, Confirming amounts, exchanging recipient addresses for Contracts
 
-            # Opening Connection
+        #### STEP 1 ####
+        self.verboseLog('Starting Step 1: Initiating exchange, the amounts to exchange are:\nInitiator: ' + str(self.init_amount) + '\nParticipant: ' + str(self.part_amount))
 
         channel = grpc.insecure_channel(self.host + ':50051')
         stub = atomicswap_pb2_grpc.AtomicSwapStub(channel)
+        self.verboseLog('Opened grpc connection.')
 
-            # Generate Initiator Address on Participant chain
         self.init_addr, _, _ = self.execute("tfchainc wallet address")
         self.init_addr = self.init_addr[21:] # removing substring, JSON output in future?
         self.init_addr = self.init_addr.rstrip("\r\n")
-            # RPC #1 to Participant,
-            # IF Participant agrees with amounts,
-            # Returns Participant Address 
+        self.verboseLog('Generated TFT Address for Participant to build contract with: ' + self.init_addr)
 
-        #order of startup does not matter anymore if we try to connect a few times
-        for x in range(0, 10):
-            try:
-                response = stub.ProcessInitiate(atomicswap_pb2.Initiate(init_amount=self.init_amount, part_amount=self.part_amount, init_addr=self.init_addr))
-                break
-            except Exception:
-                time.sleep(5)
-                print("Sleeping for connect")
-                if x == 10:
-                    exit(1)
+        response = stub.ProcessInitiate(atomicswap_pb2.Initiate(init_amount=self.init_amount, part_amount=self.part_amount, init_addr=self.init_addr))
+        self.verboseLog('Participant confirmed amounts and sent his/her BTC Address: ' + response.part_addr)
 
-
-        # Print Step Info
+            # Print for UI
         print_json(1, "Received confirmation from Participant, Exchanged recipient addresses", self.step_one_data(response))
 
 
-        # Step 2 - Initiator Atomicswap Contract with Participant address
+        #### STEP 2 ####
+        self.verboseLog('Proceeding to Step 2: Creating BTC atomicswap contract with the Participant Address')
 
-            # Create Atomicswap contract on Initiator chain using Participant address as Redeem Recipient
-        print("Here we are")
         init_ctc_cmd = "btcatomicswap --testnet --rpcuser=user --rpcpass=pass -s localhost:8332 initiate {} {}".format(response.part_addr, self.init_amount)
-        print(init_ctc_cmd)
         init_ctc_json, _, _ = self.execute(init_ctc_cmd)
-            # Convert JSON output to Python Object
-        print("This is the init_ctc_json" + init_ctc_json)
         init_ctc = json2obj(init_ctc_json)
-        print("This is the init_ctc" + init_ctc_json)
+        self.verboseLog('Created BTC atomicswap contract:\n' + init_ctc_json)
 
-            # RPC #2 to Participant, 
-            # IF Participant agrees with the Initiator Contract,
-            # Returns Participant Contract Redeem Address
+        self.verboseLog('Sending BTC atomicswap contract details to Participant...')
         response = stub.ProcessInitiateSwap(atomicswap_pb2.InitiateSwap(init_ctc_redeem_addr=init_ctc.redeemAddr, init_ctc_hex=init_ctc.contractHex, init_ctc_tx_hex=init_ctc.transactionHex, hashed_secret=init_ctc.hashedSecret))
+        self.verboseLog('Participant created TFT atomicswap contract. The Redeem address is: ' + response.part_ctc_redeem_addr)
 
-            # Print Step Info
+            # Print for UI
         print_json(2, "Atomicswap Contracts created, waiting until visible", self.step_two_data(init_ctc, response))
 
-            # Waiting for TF Participant contract to be visible
+        self.verboseLog('Waiting until TFT contract is visible on explorer...')
         self.waitUntilTxVisible(response.part_ctc_redeem_addr)
+        self.verboseLog('A block with the Redeem address was found.')
 
 
-        # Step 3 - Initiator Fulfills Participant Contract with Redeem Transaction, Reveals Secret
+        #### Step 3 ####
+        self.verboseLog('Proceeding to Step 3: Redeeming Participant contract and revealing secret')
 
             # Make Redeem Transaction
-
         self.execute("tfchainc atomicswap --encoding json -y redeem {} {}".format(response.part_ctc_redeem_addr, init_ctc.secret))
-            
+        self.verboseLog('Redeemed TFT contract.')
+
             # RPC #3 to Participant,
             # IF Participant makes Redeem Transaction,
             # Returns a Finished = True message
+        self.verboseLog('Sending secret to Participant.')
         response = stub.ProcessRedeemed(atomicswap_pb2.InitiatorRedeemFinished(secret=init_ctc.secret))
+        self.verboseLog('Participant redeemed BTC contract')
 
             # Print Step Info
         print_json(3, "Redeem Transactions created, Atomicswap Finished", self.step_three_data(response))
+        self.verboseLog('Atomicswap completed.')
 
 
     #########################
@@ -191,8 +188,12 @@ if __name__ == '__main__':
     parser.add_option("-d", "--dry-run", action="store_true",
                         dest="dry_run",  help="Do a dry run with dummy data")
 
+    parser.add_option("-v", "--verbose", action="store_true",
+                        dest="verbose",  help="Prints a lot of info to stderr to aid in debugging")
+
     (options, args) = parser.parse_args()
     dry_run = options.dry_run
+    verbose = options.verbose
   
-    atomic_swap = AtomicSwap(float(options.init_amount), float(options.part_amount), options.host, dry_run)
+    atomic_swap = AtomicSwap(float(options.init_amount), float(options.part_amount), options.host, dry_run, verbose)
     atomic_swap.run()
