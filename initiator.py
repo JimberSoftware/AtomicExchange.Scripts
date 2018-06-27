@@ -133,6 +133,10 @@ class AtomicSwap():
 
             # Print Step Info
         print_json(3, "Redeem Transactions created, Atomicswap Finished", self.step_three_data(response))
+
+        self.verboseLog('Sending Exit message to Participant')
+        stub.Exit(atomicswap_pb2.InitiatorExitMessage())
+
         self.verboseLog('Atomicswap completed.')
 
 

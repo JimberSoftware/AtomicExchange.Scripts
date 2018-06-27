@@ -147,6 +147,10 @@ class AtomicSwap(atomicswap_pb2_grpc.AtomicSwapServicer):
             # Returns Finished message
         self.verboseLog('Telling Initiator we are finished...')
         return atomicswap_pb2.ParticipantRedeemFinished(finished=True)
+    
+    def Exit(sefl,request, context):
+        sys.exit(0)
+        return atomicswap_pb2.ParticipantExitMessage(exit=True)
 
 
     #########################
