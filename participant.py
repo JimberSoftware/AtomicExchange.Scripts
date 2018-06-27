@@ -146,12 +146,10 @@ class AtomicSwap(atomicswap_pb2_grpc.AtomicSwapServicer):
             # RPC response to Redeem Finished message
             # Returns Finished message
         self.verboseLog('Telling Initiator we are finished...')
+        global looping
+        looping = False
         return atomicswap_pb2.ParticipantRedeemFinished(finished=True)
     
-    def Exit(self,request, context):
-        sys.exit(0)
-        return atomicswap_pb2.ParticipantExitMessage(exit=True)
-
 
     #########################
     # r = request
@@ -211,18 +209,19 @@ class AtomicSwap(atomicswap_pb2_grpc.AtomicSwapServicer):
 
 
 def serve(init_amount, part_amount, dry_run, verbose):
+    global looping
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     atomicswap_pb2_grpc.add_AtomicSwapServicer_to_server(AtomicSwap(init_amount, part_amount, dry_run, verbose), server)
     server.add_insecure_port('[::]:50051')
     server.start()
     try:
-        while True:
-            time.sleep(_ONE_DAY_IN_SECONDS)
+        while looping:
+            time.sleep(5)
     except KeyboardInterrupt:
         server.stop(0)
 
 
-
+looping = True
 if __name__ == '__main__':
     parser = OptionParser()
 

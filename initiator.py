@@ -76,13 +76,13 @@ class AtomicSwap():
         # addr = address
         #####################
 
-
         #### STEP 1 ####
         self.verboseLog('Step 1: Initiating exchange, the amounts to exchange are:\nInitiator: ' + str(self.init_amount) + '\nParticipant: ' + str(self.part_amount))
 
         channel = grpc.insecure_channel(self.host + ':50051')
         stub = atomicswap_pb2_grpc.AtomicSwapStub(channel)
         self.verboseLog('Opened grpc connection.')
+
 
         self.init_addr, _, _ = self.execute("tfchainc wallet address")
         self.init_addr = self.init_addr[21:] # removing substring, JSON output in future?
@@ -134,8 +134,6 @@ class AtomicSwap():
             # Print Step Info
         print_json(3, "Redeem Transactions created, Atomicswap Finished", self.step_three_data(response))
 
-        self.verboseLog('Sending Exit message to Participant')
-        stub.Exit(atomicswap_pb2.InitiatorExitMessage())
 
         self.verboseLog('Atomicswap completed.')
 
