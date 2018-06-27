@@ -9,6 +9,7 @@ service AtomicSwap {
   rpc ProcessInitiate(Initiate) returns (InitiateReply) {}
   rpc ProcessInitiateSwap(InitiateSwap) returns (AcceptSwap) {}
   rpc ProcessRedeemed(InitiatorRedeemFinished) returns (ParticipantRedeemFinished) {}
+  rpc Exit() returns () {}
 }
 
 message Initiate {

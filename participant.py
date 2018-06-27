@@ -1,7 +1,9 @@
 from __future__ import print_function
 from concurrent import futures
 import time
+import datetime
 import sys
+import itertools
 
 import grpc
 
@@ -50,7 +52,7 @@ class AtomicSwap(atomicswap_pb2_grpc.AtomicSwapServicer):
 
     def verboseLog(self, m):
         if self.verbose:
-            eprint(m)
+            eprint('\n['+datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")+']: \n'+m+'\n')
 
     def __init__(self, init_amount, part_amount, dry_run, verbose):
 
@@ -82,8 +84,9 @@ class AtomicSwap(atomicswap_pb2_grpc.AtomicSwapServicer):
         # addr = address
         #####################
 
-        self.verboseLog('Starting Step 1: Confirming amounts and exchanging the recipient addresses')
-
+        self.verboseLog('Step 1: Received Request from Initiator, Confirming amounts and exchanging the recipient addresses')
+        self.verboseLog('Expected amounts are:\nInitiator: '+str(self.init_amount)+'\nParticipant: '+str(self.part_amount))
+        self.verboseLog('Received amounts are:\nInitiator: '+str(request.init_amount)+'\nParticipant: '+str(request.part_amount))
         if(request.init_amount == self.init_amount and request.part_amount == self.part_amount):
             self.verboseLog('Amounts match.')
         else:
@@ -103,12 +106,13 @@ class AtomicSwap(atomicswap_pb2_grpc.AtomicSwapServicer):
 
     def ProcessInitiateSwap(self, request, context):
 
-        self.verboseLog('Starting Step 2: Creating TFT Atomicswap Contract with the Initiator address and the Hashed Secret')
+        self.verboseLog('Step 2: Creating TFT Atomicswap Contract with the Initiator address and the Hashed Secret')
+
             # Saving Initiator Contract and Transaction hexstrings for Redeem Step
         self.init_ctc_hex = request.init_ctc_hex
         self.init_ctc_tx_hex = request.init_ctc_tx_hex
         self.init_ctc_redeem_addr = request.init_ctc_redeem_addr
-        self.verboseLog('Received info from participant: \nInitiator Contract Hex: ' + self.init_ctc_hex + '\nInitiator Contract Transaction Hex: ' + self.init_ctc_tx_hex + '\nInitiator Contract Redeem Address: ' + self.init_ctc_redeem_addr)
+        self.verboseLog('Received info from participant: \nInitiator Contract Hex: ' + self.init_ctc_hex + '\n\nInitiator Contract Transaction Hex: ' + self.init_ctc_tx_hex + '\n\nInitiator Contract Redeem Address: ' + self.init_ctc_redeem_addr + '\n\nHashed Secret: ' + request.hashed_secret)
 
             # Create Atomicswap Contract on Participant chain using Initiator Address as Redeem Recipient
         part_ctc_json = self.execute("tfchainc atomicswap --encoding json -y participate {} {} {}".format(self.init_addr, self.part_amount, request.hashed_secret))
@@ -126,10 +130,11 @@ class AtomicSwap(atomicswap_pb2_grpc.AtomicSwapServicer):
 
     def ProcessRedeemed(self,request,context):
 
-        self.verboseLog('Starting Step 3: Using revealed secret to redeem Initiator Contract')
+        self.verboseLog('Step 3: Using revealed secret to redeem Initiator Contract')
 
-        self.verboseLog('Waiting until the Initiator Contract is visible on Explorer')
+        self.verboseLog('Waiting until the BTC Contract is visible on Explorer, this may take a while...')
         self.waitUntilTxVisible(self.init_ctc_redeem_addr)
+        self.verboseLog('A block with the Redeem address was found.')
 
             # Make Redeem Transaction
         self.execute("btcatomicswap --testnet --rpcuser=user --rpcpass=pass -s localhost:8332 redeem {} {} {}".format(self.init_ctc_hex, self.init_ctc_tx_hex, request.secret))
@@ -155,6 +160,7 @@ class AtomicSwap(atomicswap_pb2_grpc.AtomicSwapServicer):
         data['initiatorAmount'] = r.init_amount
         data['participantAddress'] = self.part_addr
         data['initiatorAddress'] = self.init_addr
+        data['datetime'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         return data
 
     def step_two_data(self, r, pc):
@@ -164,23 +170,39 @@ class AtomicSwap(atomicswap_pb2_grpc.AtomicSwapServicer):
         data['initiatorContractRedeemAddress'] = r.init_ctc_redeem_addr
         data['hashedSecret'] = r.hashed_secret
         data['participantContractRedeemAddress'] = pc.outputid
+        data['datetime'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         return data
 
     def step_three_data(self):
         data = {}
         data['finished'] = "true"
+        data['datetime'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         return data
 
     def waitUntilTxVisible(self, hash):
+
+        counter = 0
+        spinner = itertools.cycle(['-', '/', '|', '\\'])
+
         while True:
-            try:
-                btc_tx_json = urllib2.urlopen("https://test-insight.bitpay.com/api/addr/"+ hash).read()
-                btc_tx = json2obj(btc_tx_json)
-                if btc_tx.txApperances > 0:
-                    break
-            except Exception as e:
-                print(e, 'Trying again in 10s...')
-                time.sleep(10)
+            sys.stderr.write(spinner.next())
+            sys.stderr.flush()
+            sys.stderr.write('\b')
+            counter += 1
+            time.sleep(0.1)
+            if(counter % 100) == 0:
+                try:
+                    self.verboseLog('Looking up Redeem Address in explorer:')
+                    btc_tx_json = urllib2.urlopen("https://test-insight.bitpay.com/api/addr/"+ hash).read()
+                    btc_tx = json2obj(btc_tx_json)
+                    self.verboseLog('Redeem address was found in ' + str(btc_tx.txApperances) + ' transactions')
+                    if btc_tx.txApperances > 0:
+                        break
+                    else:
+                        self.verboseLog('Waiting 10s')
+                except Exception as e:
+                    print(e, 'Trying again in 10s...')
+                    time.sleep(10)
         
 
 

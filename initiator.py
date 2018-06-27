@@ -4,9 +4,11 @@ from __future__ import print_function
 
 import grpc
 import time
+import datetime
 
 import atomicswap_pb2
 import atomicswap_pb2_grpc
+import itertools
 from optparse import OptionParser
 
 import sys
@@ -31,7 +33,7 @@ def print_json(step, stepName, data):
     jsonObject['stepName'] = stepName
     jsonObject['data'] = data
     json_data = json.dumps(jsonObject) 
-    json_data = "{}\n".format(str(json_data))  
+    json_data = "{}\n".format(str(json_data)) 
     sys.stdout.write(json_data)
     sys.stdout.flush()
 
@@ -42,7 +44,7 @@ class AtomicSwap():
 
     def verboseLog(self, m):
         if self.verbose:
-            eprint(m)
+            eprint('\n['+datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")+']: \n'+m+'\n')
 
     def __init__(self, init_amount, part_amount, host, dry_run, verbose):
         
@@ -76,7 +78,7 @@ class AtomicSwap():
 
 
         #### STEP 1 ####
-        self.verboseLog('Starting Step 1: Initiating exchange, the amounts to exchange are:\nInitiator: ' + str(self.init_amount) + '\nParticipant: ' + str(self.part_amount))
+        self.verboseLog('Step 1: Initiating exchange, the amounts to exchange are:\nInitiator: ' + str(self.init_amount) + '\nParticipant: ' + str(self.part_amount))
 
         channel = grpc.insecure_channel(self.host + ':50051')
         stub = atomicswap_pb2_grpc.AtomicSwapStub(channel)
@@ -87,15 +89,16 @@ class AtomicSwap():
         self.init_addr = self.init_addr.rstrip("\r\n")
         self.verboseLog('Generated TFT Address for Participant to build contract with: ' + self.init_addr)
 
+        self.verboseLog('Sending TFT Address to Participant and asking for amount confirmation...')
         response = stub.ProcessInitiate(atomicswap_pb2.Initiate(init_amount=self.init_amount, part_amount=self.part_amount, init_addr=self.init_addr))
-        self.verboseLog('Participant confirmed amounts and sent his/her BTC Address: ' + response.part_addr)
+        self.verboseLog('Participant confirmed amounts and sent BTC Address: ' + response.part_addr)
 
-            # Print for UI
+            # JSON for UI
         print_json(1, "Received confirmation from Participant, Exchanged recipient addresses", self.step_one_data(response))
 
 
         #### STEP 2 ####
-        self.verboseLog('Proceeding to Step 2: Creating BTC atomicswap contract with the Participant Address')
+        self.verboseLog('Step 2: Creating BTC atomicswap contract with the Participant Address')
 
         init_ctc_cmd = "btcatomicswap --testnet --rpcuser=user --rpcpass=pass -s localhost:8332 initiate {} {}".format(response.part_addr, self.init_amount)
         init_ctc_json, _, _ = self.execute(init_ctc_cmd)
@@ -109,7 +112,7 @@ class AtomicSwap():
             # Print for UI
         print_json(2, "Atomicswap Contracts created, waiting until visible", self.step_two_data(init_ctc, response))
 
-        self.verboseLog('Waiting until TFT contract is visible on explorer...')
+        self.verboseLog('Waiting until TFT contract is visible on explorer, this may take a while...')
         self.waitUntilTxVisible(response.part_ctc_redeem_addr)
         self.verboseLog('A block with the Redeem address was found.')
 
@@ -124,7 +127,7 @@ class AtomicSwap():
             # RPC #3 to Participant,
             # IF Participant makes Redeem Transaction,
             # Returns a Finished = True message
-        self.verboseLog('Sending secret to Participant.')
+        self.verboseLog('Sending secret to Participant and Awaiting response...')
         response = stub.ProcessRedeemed(atomicswap_pb2.InitiatorRedeemFinished(secret=init_ctc.secret))
         self.verboseLog('Participant redeemed BTC contract')
 
@@ -144,6 +147,7 @@ class AtomicSwap():
         data['initiatorAmount'] = self.init_amount
         data['participantAddress'] = r.part_addr
         data['initiatorAddress'] = self.init_addr
+        data['datetime'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         return data
 
     def step_two_data(self, ic, r):
@@ -153,20 +157,32 @@ class AtomicSwap():
         data['initiatorContractTransactionHex'] = ic.transactionHex
         data['participantContractRedeemAddress'] = r.part_ctc_redeem_addr
         data['initiatorAddress'] = self.init_addr
+        data['datetime'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         return data
 
     def step_three_data(self, r):
         data = {}
         data['atomicswapFinished'] = r.finished
+        data['datetime'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         return data
 
     def waitUntilTxVisible(self, hash):
         # Should probably have a max number of tries
 
         returncode = 1
+        counter = 0
+        spinner = itertools.cycle(['-', '/', '|', '\\'])
+
         while returncode != 0:
-            time.sleep(10)
-            _, _, returncode = self.execute("tfchainc explore hash "+ hash)
+            sys.stderr.write(spinner.next())
+            sys.stderr.flush()
+            sys.stderr.write('\b')
+            counter += 1
+            time.sleep(0.1)
+            if (counter % 100) == 0:
+                self.verboseLog('Looking up hash in explorer:')
+                _, _, returncode = self.execute("tfchainc explore hash "+ hash)
+                self.verboseLog('Waiting 10s')
 
 
 
