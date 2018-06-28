@@ -17,21 +17,24 @@ pip install grpcio-tools
 make
 ```
 
-## Run acceptor
+## Run acceptor (TFT->BTC)
 
-values are currently hard coded, use these values. 
-
+The acceptor is essentially a TCP server, run it like this:
 ```sh
-python acceptor.py -m 1234 -o 987 -d
+python acceptor.py -m {{tft}} -o {{btc}} 
 ```
 
-## Run initiator
+## Run initiator (BTC->TFT)
 
-values are currently hard coded, use these values. 
 
+The initiator is essentially a TCP client, run it like this:
 ```sh
-python initiator.py -m 987 -o 1234 -d
+python initiator.py -m {{btc}} -o {{tft}} -i {{ipacceptor}}
 ```
+
+## Server/client
+
+Future versions will be peer2peer with multiple currencies and have no functional differency between TCP server and client.
 
 ## Output
 
