@@ -1,5 +1,10 @@
 # Scripts for automic atomic swaps in console
 
+These scripts provide peer-to-peer atomic swap functionality. By each peer starting the script, a perfectly safe atomic swap will happen between the peers.
+
+Find more information on https://github.com/rivine/rivine/blob/master/doc/atomicswap/atomicswap.md
+
+Note: Do not use this beta version in production yet!
 ## install
 - install npm
 - install python
