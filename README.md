@@ -23,6 +23,7 @@ The acceptor is essentially a TCP server, run it like this:
 ```sh
 python acceptor.py -m {{tft}} -o {{btc}} 
 ```
+-v adds verbose output
 
 ## Run initiator (BTC->TFT)
 
@@ -31,6 +32,7 @@ The initiator is essentially a TCP client, run it like this:
 ```sh
 python initiator.py -m {{btc}} -o {{tft}} -i {{ipacceptor}}
 ```
+-v adds verbose output
 
 ## Server/client
 
