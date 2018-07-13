@@ -9,6 +9,7 @@ service AtomicSwap {
   rpc ProcessInitiate(Initiate) returns (InitiateReply) {}
   rpc ProcessInitiateSwap(InitiateSwap) returns (AcceptSwap) {}
   rpc ProcessRedeemed(InitiatorRedeemFinished) returns (ParticipantRedeemFinished) {}
+  rpc ProcessAbort(Abort) returns (Abort) {}
 }
 
 message Initiate {
@@ -30,6 +31,7 @@ message InitiateSwap {
 
 message AcceptSwap {
   string part_ctc_redeem_addr = 1;
+  bool accepted = 2;
 }
 
 message InitiatorRedeemFinished {
@@ -39,4 +41,9 @@ message InitiatorRedeemFinished {
 message ParticipantRedeemFinished {
   bool finished = 1;
 }
+
+message Abort {
+  bool abort = 1;
+}
+
 

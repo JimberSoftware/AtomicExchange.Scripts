@@ -48,8 +48,8 @@ class AtomicSwap():
 
     def __init__(self, init_amount, part_amount, host, dry_run, verbose):
         
-        self.init_amount = init_amount
-        self.part_amount = part_amount
+        self.init_amount = float(init_amount)
+        self.part_amount = float(part_amount)
         self.dry_run = dry_run
         self.host = host
         self.verbose = verbose
@@ -63,8 +63,11 @@ class AtomicSwap():
         pro = subprocess.Popen(process, stdout=subprocess.PIPE, 
                             shell=True, preexec_fn=os.setsid) 
         out, err = pro.communicate()
+        if self.verbose:
+            print('Out:\n' + str(out))
+            print('\nErr:\n' + str(err))
+            print('\nCode:\n' + str(pro.returncode))
         return out, err, pro.returncode
-
         
     def run(self):
 
@@ -83,30 +86,47 @@ class AtomicSwap():
         stub = atomicswap_pb2_grpc.AtomicSwapStub(channel)
         self.verboseLog('Opened grpc connection.')
 
-
         self.init_addr, _, _ = self.execute("tfchainc wallet address")
         self.init_addr = self.init_addr[21:] # removing substring, JSON output in future?
         self.init_addr = self.init_addr.rstrip("\r\n")
         self.verboseLog('Generated TFT Address for Participant to build contract with: ' + self.init_addr)
 
         self.verboseLog('Sending TFT Address to Participant and asking for amount confirmation...')
-        response = stub.ProcessInitiate(atomicswap_pb2.Initiate(init_amount=self.init_amount, part_amount=self.part_amount, init_addr=self.init_addr))
+
+        #order of startup does not matter anymore if we try to connect a few times
+
+        for x in range(0, 10):
+            # Print for UI
+            try:
+                response = stub.ProcessInitiate(atomicswap_pb2.Initiate(init_amount=self.init_amount, part_amount=self.part_amount, init_addr=self.init_addr))
+                break
+            except Exception:
+                time.sleep(5)
+                print("Sleeping for connect")
+                if x == 10:
+                    exit(1)
+
         self.verboseLog('Participant confirmed amounts and sent BTC Address: ' + response.part_addr)
 
             # JSON for UI
         print_json(1, "Received confirmation from Participant, Exchanged recipient addresses", self.step_one_data(response))
 
-
         #### STEP 2 ####
         self.verboseLog('Step 2: Creating BTC atomicswap contract with the Participant Address')
 
         init_ctc_cmd = "btcatomicswap --testnet --rpcuser=user --rpcpass=pass -s localhost:8332 initiate {} {}".format(response.part_addr, self.init_amount)
-        init_ctc_json, _, _ = self.execute(init_ctc_cmd)
+        init_ctc_json, init_ctc_err, init_ctc_code = self.execute(init_ctc_cmd)
         init_ctc = json2obj(init_ctc_json)
+        self.init_ctc_hex = init_ctc.contractHex
+        self.init_ctc_tx_hex = init_ctc.transactionHex
         self.verboseLog('Created BTC atomicswap contract:\n' + init_ctc_json)
 
         self.verboseLog('Sending BTC atomicswap contract details to Participant...')
         response = stub.ProcessInitiateSwap(atomicswap_pb2.InitiateSwap(init_ctc_redeem_addr=init_ctc.redeemAddr, init_ctc_hex=init_ctc.contractHex, init_ctc_tx_hex=init_ctc.transactionHex, hashed_secret=init_ctc.hashedSecret))
+        if response.accepted is False:
+            self.verboseLog('Auditing Failed on Participant Side, aborting swap')
+            self.refund(173500) #48hrs wait
+
         self.verboseLog('Participant created TFT atomicswap contract. The Redeem address is: ' + response.part_ctc_redeem_addr)
 
             # Print for UI
@@ -116,13 +136,29 @@ class AtomicSwap():
         self.waitUntilTxVisible(response.part_ctc_redeem_addr)
         self.verboseLog('A block with the Redeem address was found.')
 
+        self.verboseLog('Auditing TFT Contract')
+        _, _, auditCode = self.execute('tfchainc atomicswap --encoding json -y auditcontract {} --amount {} --receiver {} --secrethash {}'.format(response.part_ctc_redeem_addr, self.part_amount, self.init_addr, init_ctc.hashedSecret))
+        auditCode = 1
+        if auditCode is 0:
+            self.verboseLog('Audit Successful')
+        else:
+            self.verboseLog('Audit Failed, aborting swap')
+            stub.ProcessAbort(atomicswap_pb2.Abort(abort=True))
+            self.refund(87000) # wait 24hrs, because participant waited 24hrs also
+
 
         #### Step 3 ####
         self.verboseLog('Proceeding to Step 3: Redeeming Participant contract and revealing secret')
 
             # Make Redeem Transaction
-        self.execute("tfchainc atomicswap --encoding json -y redeem {} {}".format(response.part_ctc_redeem_addr, init_ctc.secret))
-        self.verboseLog('Redeemed TFT contract.')
+        part_ctc_redeem_json,_,redeemCode = self.execute("tfchainc atomicswap --encoding json -y redeem {} {}".format(response.part_ctc_redeem_addr, init_ctc.secret))
+        if redeemCode is 0:
+            self.verboseLog('Redeem Successful')
+        else:
+            self.verboseLog('Redeem Failed, aborting swap')
+            stub.ProcessAbort(atomicswap_pb2.Abort(abort=True))
+            self.refund(87000) # wait 24hrs, because participant waited 24hrs also
+        self.verboseLog('Redeemed TFT contract: ' + part_ctc_redeem_json)
 
             # RPC #3 to Participant,
             # IF Participant makes Redeem Transaction,
@@ -185,6 +221,18 @@ class AtomicSwap():
                 self.verboseLog('Looking up hash in explorer:')
                 _, _, returncode = self.execute("tfchainc explore hash "+ hash)
                 self.verboseLog('Waiting 10s')
+
+    def refund(self, seconds):
+        self.verboseLog('Going to wait ' + str(seconds) + 'seconds... until we can refund...')
+        time.sleep(seconds)
+        init_refund_json,init_refund_err,refundCode = self.execute('btcatomicswap --testnet --rpcuser=user --rpcpass=pass -s localhost:8332 refund {} {}'.format(self.init_ctc_hex, self.init_ctc_tx_hex))
+        #init_refund = json2obj(init_refund_json)
+        if refundCode is 0:
+            self.verboseLog('Executed refund transaction: ' + init_refund_json)
+        else:
+            self.verboseLog('Something went wrong with publishing the refund: ' + init_refund_json + '\n' + init_refund_err)
+        exit(1)
+
 
 
 
