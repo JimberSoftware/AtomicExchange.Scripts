@@ -255,7 +255,7 @@ def serve(init_amount, part_amount, dry_run, verbose):
         while looping:
             time.sleep(5)
             retryTimer += 1
-            if (retryTimer > 4 and swapInProgress == False)
+            if (retryTimer > 4 and swapInProgress == False):
                 looping = False
     except KeyboardInterrupt:
         server.stop(0)
