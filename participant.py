@@ -87,6 +87,7 @@ class AtomicSwap(atomicswap_pb2_grpc.AtomicSwapServicer):
         # tx = transaction
         # addr = address
         #####################
+        global swapInProgress
         swapInProgress = True
         self.verboseLog('Step 1: Received Request from Initiator, Confirming amounts and exchanging the recipient addresses')
         self.verboseLog('Expected amounts are:\nInitiator: '+str(self.init_amount)+'\nParticipant: '+str(self.part_amount))
@@ -95,7 +96,9 @@ class AtomicSwap(atomicswap_pb2_grpc.AtomicSwapServicer):
             self.verboseLog('Amounts match.')
         else:
             self.verboseLog('Amounts DO NOT match. Aborting swap.')
-            exit(1) # Needs to be handled better
+            global looping
+            looping = False
+            return atomicswap_pb2.InitiateReply(accepted=False)
 
         self.part_addr,_,_ = self.execute('bitcoin-cli getnewaddress \"\" legacy')
         self.part_addr = self.part_addr.rstrip("\r\n")
@@ -107,7 +110,7 @@ class AtomicSwap(atomicswap_pb2_grpc.AtomicSwapServicer):
             # Print Step info to UI
         print_json(1, "Sent Atomicswap request confirmation with Participant Address", self.step_one_data(request))
 
-        return atomicswap_pb2.InitiateReply(part_addr=self.part_addr)
+        return atomicswap_pb2.InitiateReply(part_addr=self.part_addr, accepted = True)
 
     def ProcessInitiateSwap(self, request, context):
 
@@ -262,6 +265,7 @@ def serve(init_amount, part_amount, dry_run, verbose):
 
 
 looping = True
+swapInProgress = False
 if __name__ == '__main__':
     parser = OptionParser()
 

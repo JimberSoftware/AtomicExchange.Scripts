@@ -105,7 +105,9 @@ class AtomicSwap():
                 print("Sleeping for connect")
                 if x == 10:
                     exit(1)
-
+        if(response.accepted == False):
+            self.verboseLog('Something went wrong, aborting swap')
+            exit(1)
         self.verboseLog('Participant confirmed amounts and sent BTC Address: ' + response.part_addr)
 
             # JSON for UI
@@ -138,7 +140,6 @@ class AtomicSwap():
 
         self.verboseLog('Auditing TFT Contract')
         _, _, auditCode = self.execute('tfchainc atomicswap --encoding json -y auditcontract {} --amount {} --receiver {} --secrethash {}'.format(response.part_ctc_redeem_addr, self.part_amount, self.init_addr, init_ctc.hashedSecret))
-        auditCode = 1
         if auditCode is 0:
             self.verboseLog('Audit Successful')
         else:

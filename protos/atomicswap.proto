@@ -20,6 +20,7 @@ message Initiate {
 
 message InitiateReply {
   string part_addr = 1;
+  bool accepted = 2;
 }
 
 message InitiateSwap {
